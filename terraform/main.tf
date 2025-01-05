@@ -94,7 +94,7 @@ resource "aws_instance" "backend" {
               sudo apt update
               sudo apt install -y nodejs npm git
               cd /home/ubuntu
-              git clone https://your-repo-link.com/finance-app-backend.git
+              git clone https://github.com/sanjanasukumar1/finance-tracker.git
               cd finance-app-backend
               npm install
               npm start
