@@ -5,7 +5,7 @@ function App() {
   const [expenses, setExpenses] = useState([]);
 
   useEffect(() => {
-    axios.get('http://your-ec2-ip:5000/expenses')
+    axios.get('http://13.235.51.79:5000/expenses')
       .then(response => setExpenses(response.data))
       .catch(error => console.error(error));
   }, []);
