@@ -9,10 +9,10 @@ app.use(cors());
 app.use(bodyParser.json());
 
 const db = mysql.createConnection({
-  host: 'your-rds-endpoint',
+  host: 'terraform-20250108055531170400000003.c7u2awkwma0t.ap-south-1.rds.amazonaws.com',
   user: 'admin',
-  password: 'your-db-password',
-  database: 'finance'
+  password: 'password',
+  database: 'financeappdb'
 });
 
 app.get('/expenses', (req, res) => {

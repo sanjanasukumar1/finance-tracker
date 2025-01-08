@@ -24,6 +24,18 @@ resource "aws_subnet" "public_subnet" {
   }
 }
 
+# Second Public Subnet in a different Availability Zone
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id = aws_vpc.main.id
+  cidr_block = "10.0.3.0/24"  # Choose an unused CIDR block
+  availability_zone = "ap-south-1c"  # Different availability zone
+  map_public_ip_on_launch = true
+  tags = {
+    Name = "public-subnet-2"
+  }
+}
+
+
 # Private Subnet Configuration
 resource "aws_subnet" "private_subnet" {
   vpc_id = aws_vpc.main.id
@@ -77,12 +89,33 @@ resource "aws_security_group" "ec2_sg" {
   }
 }
 
+# Security Group for RDS (Database)
+resource "aws_security_group" "db_sg" {
+  name        = "db-security-group"
+  description = "Allow MySQL traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]  # Allow traffic only from VPC
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
 # EC2 Instance for Backend
 resource "aws_instance" "backend" {
-  ami           = "ami-0c55b159cbfafe1f0"
+  ami           = "ami-053b12d3152c0cc71"
   instance_type = "t2.micro" 
   subnet_id     = aws_subnet.public_subnet.id
-  security_groups = [aws_security_group.ec2_sg.name]
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   key_name      = "finance-app-keypair"
   tags = {
     Name = "backend-instance"
@@ -95,44 +128,42 @@ resource "aws_instance" "backend" {
               sudo apt install -y nodejs npm git
               cd /home/ubuntu
               git clone https://github.com/sanjanasukumar1/finance-tracker.git
-              cd finance-app-backend
+              cd finance-tracker/backend
               npm install
               npm start
               EOF
 }
 
+# DB Subnet Group
+resource "aws_db_subnet_group" "default" {
+  name        = "finance-db-subnet-group"
+  description = "Subnet group for RDS instance"
+  subnet_ids  = [aws_subnet.public_subnet.id, aws_subnet.private_subnet.id]
+
+  tags = {
+    Name = "finance-db-subnet-group"
+  }
+}
+
 # RDS MySQL Database (Free Tier)
 resource "aws_db_instance" "default" {
   allocated_storage    = 20
-  storage_type        = "gp2"
-  db_instance_class   = "db.t3.micro"  # Free-tier eligible
-  engine              = "mysql"
-  engine_version      = "8.0"
-  username            = "admin"
-  password            = "yourpassword"  # Change this to a secure password
-  db_name             = "finance_app"
-  parameter_group_name = "default.mysql8.0"
-  skip_final_snapshot = true
-  publicly_accessible = false
-  multi_az            = false
+  storage_type         = "gp2"
+  db_name              = "financeappdb"
+  engine               = "mysql"
+  engine_version       = "8.0"
+  instance_class       = "db.t3.micro"  # Free-tier eligible
+  username             = "admin"
+  password             = "password"  # Use a secret management service for better security
+  db_subnet_group_name = aws_db_subnet_group.default.name
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+  multi_az             = false
+  publicly_accessible  = false
+  backup_retention_period = 7
   tags = {
-    Name = "finance-db"
-  }
-
-  # Ensure it fits within the Free Tier
-  final_snapshot_identifier = ""
-}
-
-terraform {
-  backend "s3" {
-    bucket         = "terraform-state-finance-app"  # Your S3 bucket name
-    key            = "finance-app/terraform.tfstate"  # State file location in the bucket
-    region         = "ap-south-1"
-    dynamodb_table = "terraform-state-lock"  # Use DynamoDB for state locking
-    encrypt        = true  # Enable encryption for security
+    Name = "finance-app-db"
   }
 }
-
 
 # Elastic Load Balancer (ELB) for Distributing Traffic
 resource "aws_lb" "app_lb" {
@@ -140,16 +171,18 @@ resource "aws_lb" "app_lb" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.ec2_sg.id]
-  subnets            = [aws_subnet.public_subnet.id]
+  subnets            = [
+    aws_subnet.public_subnet.id,
+    aws_subnet.public_subnet_2.id
+  ]
 
   enable_deletion_protection = false
-  idle_timeout {
-    minutes = 60
-  }
+  idle_timeout    = 60
   tags = {
     Name = "finance-app-lb"
   }
 }
+
 
 # Load Balancer Target Group
 resource "aws_lb_target_group" "app_target_group" {
@@ -193,7 +226,7 @@ resource "aws_iam_role" "ec2_role" {
   name = "ec2-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = [ {
       Action = "sts:AssumeRole"
       Effect = "Allow"
       Principal = {
@@ -212,3 +245,13 @@ resource "aws_iam_role_policy_attachment" "ec2_role_policy_attachment" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
+# S3 Bucket for Terraform State (Backend)
+terraform {
+  backend "s3" {
+    bucket         = "terraform-state-finance-app"  # Your S3 bucket name
+    key            = "finance-app/terraform.tfstate"  # State file location in the bucket
+    region         = "ap-south-1"
+    dynamodb_table = "terraform-state-lock"  # Use DynamoDB for state locking
+    encrypt        = true  # Enable encryption for security
+  }
+}
