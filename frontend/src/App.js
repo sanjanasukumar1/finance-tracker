@@ -5,7 +5,7 @@ function App() {
   const [expenses, setExpenses] = useState([]);
 
   useEffect(() => {
-    axios.get('http://13.235.51.79:5000/expenses')
+    axios.get('http://finance-app-lb-1338696661.ap-south-1.elb.amazonaws.com/expenses')
       .then(response => setExpenses(response.data))
       .catch(error => console.error(error));
   }, []);
